@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find Lesser-Known Places Near You</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Google Maps API -->
+    <script async
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAFu9Sxd4RsWINvE2NLsfvclWuY6zkQhDg&callback=initMap&libraries=places">
+    </script>
+    <!-- Font and CSS for better design -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f0f4f7;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 20px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        #getLocation {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: 500;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #getLocation:hover {
+            background-color: #0056b3;
+        }
+
+        #container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin: 20px;
+        }
+
+        #map, #street-view {
+            height: 500px;
+            width: 48%;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+
+        #suggestions {
+            max-width: 90%;
+            margin: 20px auto;
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+
+        .suggestion-card {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #e9f7fe;
+            border-left: 4px solid #007bff;
+            border-radius: 5px;
+        }
+
+        .suggestion-card h3 {
+            margin: 0;
+            font-size: 18px;
+            color: #007bff;
+        }
+
+        .suggestion-card p {
+            margin: 5px 0;
+            font-size: 14px;
+            color: #333;
+        }
+
+        button {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 15px;
+            font-size: 14px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        /* Responsive styling */
+        @media (max-width: 768px) {
+            #map, #street-view {
+                width: 100%;
+                margin-bottom: 20px;
+            }
+
+            #container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Find Lesser-Known Places Near You</h1>
+
+    <button id="getLocation">Find My Location and Suggest Places</button>
+
+    <div id="container">
+        <div id="map"></div>
+        <div id="street-view"></div>
+    </div>
+
+    <h2 style="text-align:center;">Suggestions:</h2>
+    <div id="suggestions">
+        <!-- Suggestions will be displayed here -->
+    </div>
+
+    <script>
+        let map;
+        let streetViewPanorama;
+        let userMarker;
+        let directionsService;
+        let directionsRenderer;
+
+        function initMap() {
+            // Initialize Google Maps
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: { lat: 0, lng: 0 }, // Default to 0, 0 until user location is obtained
+                zoom: 8
+            });
+
+            // Initialize Street View
+            streetViewPanorama = new google.maps.StreetViewPanorama(document.getElementById('street-view'), {
+                position: { lat: 0, lng: 0 },
+                pov: {
+                    heading: 34,
+                    pitch: 10
+                }
+            });
+            map.setStreetView(streetViewPanorama); // Link street view with the map
+
+            // Directions Service and Renderer
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            directionsRenderer.setMap(map);
+        }
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(showPosition, showError);
+            } else {
+                alert("Geolocation is not supported by this browser.");
+            }
+        }
+
+        function showPosition(position) {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+
+            // Set user location on the map
+            const userLatLng = { lat: latitude, lng: longitude };
+            map.setCenter(userLatLng);
+
+            // Add user marker to the map
+            if (userMarker) {
+                userMarker.setMap(null);
+            }
+            userMarker = new google.maps.Marker({
+                position: userLatLng,
+                map: map,
+                title: "Your Location"
+            });
+
+            // Make an AJAX request to Flask to get suggestions
+            $.ajax({
+                url: '/suggest',
+                method: 'GET',
+                data: { 
+                    latitude: latitude,
+                    longitude: longitude
+                },
+                success: function(response) {
+                    $('#suggestions').empty(); // Clear previous suggestions
+
+                    if (response.message) {
+                        $('#suggestions').append('<p>' + response.message + '</p>');
+                    } else {
+                        response.forEach(function(place) {
+                            $('#suggestions').append(
+                                `<div class="suggestion-card">
+                                    <h3>${place.name}</h3>
+                                    <p>Visits: ${place.visit}</p>
+                                    <p>Description: ${place.category}</p>
+                                    <p>Distance: ${place.distance.toFixed(2)} km</p>
+                                    <button onclick="getDirections(${place.latitude}, ${place.longitude})">
+                                        Get Directions
+                                    </button>
+                                    <button onclick="showStreetView(${place.latitude}, ${place.longitude})">
+                                        Show 3D View
+                                    </button>
+                                </div>`
+                            );
+                        });
+                    }
+                },
+                error: function(error) {
+                    $('#suggestions').empty();
+                    $('#suggestions').append('<p>Error fetching suggestions. Please try again later.</p>');
+                }
+            });
+        }
+
+        function getDirections(placeLat, placeLng) {
+            if (userMarker) {
+                const userPosition = userMarker.getPosition();
+
+                const request = {
+                    origin: userPosition,
+                    destination: { lat: placeLat, lng: placeLng },
+                    travelMode: google.maps.TravelMode.DRIVING
+                };
+
+                directionsService.route(request, function(result, status) {
+                    if (status == google.maps.DirectionsStatus.OK) {
+                        directionsRenderer.setDirections(result);
+                    } else {
+                        alert("Could not get directions: " + status);
+                    }
+                });
+            }
+        }
+
+        function showStreetView(placeLat, placeLng) {
+            // Update the Street View with the location of the selected place
+            streetViewPanorama.setPosition({ lat: placeLat, lng: placeLng });
+            streetViewPanorama.setPov({ heading: 165, pitch: 0 });
+            streetViewPanorama.setZoom(1);
+        }
+
+        function showError(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    alert("User denied the request for Geolocation.");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    alert("Location information is unavailable.");
+                    break;
+                case error.TIMEOUT:
+                    alert("The request to get user location timed out.");
+                    break;
+                case error.UNKNOWN_ERROR:
+                    alert("An unknown error occurred.");
+                    break;
+            }
+        }
+
+        // Trigger geolocation request on button click
+        $('#getLocation').on('click', function() {
+            getLocation();
+        });
+    </script>
+</body>
+</html>
